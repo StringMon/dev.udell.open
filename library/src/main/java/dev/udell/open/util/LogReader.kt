@@ -11,18 +11,17 @@ import android.text.format.DateFormat
 import android.view.Gravity
 import android.widget.Toast
 import androidx.core.content.FileProvider
+import androidx.startup.Initializer
 import dev.udell.open.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
 
-class LogProvider : FileProvider()
-
 @Suppress("unused")
 class LogReader(context: Context) {
     private val appContext = context.applicationContext
-    private val fileOps = FileOperations()
+    private val fileOps = FileUtils()
 
     suspend fun shareLog(
         emailRecipient: String? = null,
@@ -110,16 +109,6 @@ class LogReader(context: Context) {
 
         return true
     }
-/*
-    java.lang.Thread(java.lang.Runnable (
-    {
-
-        // Remove any old log files from the cache dir
-        val fileOps: name.udell.common.FileOperations =
-            name.udell.common.FileOperations(this@BaseApp, null)
-        fileOps.clearCache(SendLogTask.Companion.getLogFilePrefix(this@BaseApp), "")
-    })).start()
-*/
 
     companion object {
         private const val LOG_SUBDIR = "log"
@@ -179,3 +168,22 @@ class LogReader(context: Context) {
     }
 }
 
+class LogProvider : FileProvider()
+
+@Suppress("unused") // it's referenced in the manifest
+class LogDeleter : Initializer<LogReader> {
+    override fun create(context: Context): LogReader {
+        // Remove any old log files from the cache dir
+        FileUtils().clearDir(
+            context.cacheDir.absolutePath,
+            PrefixFilter(LogReader.getLogFilePrefix(context))
+        )
+
+        return LogReader(context)
+    }
+
+    override fun dependencies(): List<Class<out Initializer<*>>> {
+        // No dependencies on other libraries.
+        return emptyList()
+    }
+}

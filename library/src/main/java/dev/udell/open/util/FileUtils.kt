@@ -1,12 +1,9 @@
 package dev.udell.open.util
 
-import java.io.File
-import java.io.FileOutputStream
-import java.io.IOException
-import java.io.InputStream
+import java.io.*
 
 @Suppress("MemberVisibilityCanBePrivate", "unused")
-class FileOperations {
+class FileUtils {
 
     /**
      * A generic interface for monitoring the progress of a long-running data operation.
@@ -41,7 +38,7 @@ class FileOperations {
      *             file (not just a directory), its parent directory is used.
      * @return Boolean Whether the directory was successfully created
      */
-    fun initDirectory(path: File): Boolean {
+    suspend fun initDirectory(path: File): Boolean {
         val dir: File? = if (path.isDirectory) {
             path
         } else {
@@ -71,10 +68,10 @@ class FileOperations {
      * @return A `Boolean` indicating whether the file is now gone from storage: successfully
      *         deleted, or wasn't found in the first place.
      */
-    fun deleteFile(pathname: CharSequence): Boolean {
+    suspend fun deleteFile(pathname: CharSequence): Boolean {
         return deleteFile(File(pathname.toString()))
     }
-    fun deleteFile(condemned: File): Boolean {
+    suspend fun deleteFile(condemned: File): Boolean {
         var result = true
         return if (condemned.exists()) {
             if (condemned.isDirectory) {
@@ -99,10 +96,12 @@ class FileOperations {
      * @param listener An optional `ProgressListener` to be notified every 10 kB as the file is written.
      * @return The fully-qualified pathname of the file created, or `null` on failure.
      */
-    fun saveStream(path: CharSequence,
-                   name: CharSequence,
-                   stream: InputStream,
-                   listener: ProgressListener? = null): String? {
+    suspend fun saveStream(
+        path: CharSequence,
+        name: CharSequence,
+        stream: InputStream,
+        listener: ProgressListener? = null
+    ): String? {
         // Combine the given path + name in case the name has its own embedded path segment
         val pathName = File(path.toString() + File.separator + name)
         var result: String? = pathName.toString()
@@ -138,5 +137,34 @@ class FileOperations {
         }
         
         return result
+    }
+
+    fun clearDir(path: String, filter: FilenameFilter): Boolean {
+        var found = false
+        val dir = File(path)
+        val list = dir.list(filter)
+        if (list != null) {
+            for (fileName in list) {
+                if (fileName.isNotEmpty()) {  // 0-length files aren't worth finding
+                    found = true
+                    continue
+                }
+                
+                File(path, fileName).delete()
+            }
+        }
+        return found
+    }
+}
+
+class PrefixFilter(prefix: CharSequence) : FilenameFilter {
+    private val targetPrefix: String = prefix.toString()
+    
+    override fun accept(dir: File, filename: String): Boolean {
+        return filename.startsWith(targetPrefix)
+    }
+
+    override fun toString(): String {
+        return "PrefixFilter.[$targetPrefix]"
     }
 }
