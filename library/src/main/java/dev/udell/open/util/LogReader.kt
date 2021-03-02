@@ -19,11 +19,23 @@ import java.io.File
 import java.io.FilenameFilter
 import java.io.IOException
 
+/**
+ * Utility class to grab a copy of the current app's log(cat) and share it.
+ */
 @Suppress("unused")
 class LogReader(context: Context) {
     private val appContext = context.applicationContext
     private val fileOps = FileUtils()
 
+    /**
+     * The main log-sharing function. With no parameters, it'll share the current log as plain text
+     * to any app on the system registered to receive such.
+     *
+     * @param emailRecipient If supplied, configures the sharing intent for emailing to this address.
+     * @param emailHeaders Optional text to prepend to the email.
+     * @param shouldZip If true, will compress the log text into a .zip file
+     * @return `Boolean` for success
+     */
     suspend fun shareLog(
         emailRecipient: String? = null,
         emailHeaders: String? = null,
@@ -114,10 +126,15 @@ class LogReader(context: Context) {
     companion object {
         internal const val LOG_SUBDIR = "log"
 
+        /** The log files generated will be named with this value followed by a timestamp */
         internal fun getLogFilePrefix(context: Context): String {
             return context.packageName + "_log_"
         }
 
+        /**
+         * Helper function to create an email-the-developer `Intent`. Used to send the log, but
+         * can also be used standalone, such as for a "Contact" link.
+         */
         @TargetApi(Build.VERSION_CODES.LOLLIPOP)
         fun makeEmailIntent(
             context: Context,
@@ -169,23 +186,25 @@ class LogReader(context: Context) {
     }
 }
 
+/** The `ContentProvider` which makes `LogReader` work. */
 class LogProvider : FileProvider()
 
+/** Helper class to delete old logs the next time the app starts. */
 @Suppress("unused") // it's referenced in the manifest
 class LogDeleter : Initializer<Unit> {
     override fun create(context: Context) {
         // Remove any old log files from the cache dir
         val path = context.cacheDir.absolutePath + '/' + LogReader.LOG_SUBDIR
         File(path).list(PrefixFilter(LogReader.getLogFilePrefix(context)))
-                ?.forEach { name ->
-                    File(path, name).delete()
-                }
+            ?.forEach { name ->
+                File(path, name).delete()
+            }
     }
 
     // No dependencies on other libraries.
     override fun dependencies(): List<Class<out Initializer<*>>> = emptyList()
 
-    class PrefixFilter(val prefix: String) : FilenameFilter {
+    private class PrefixFilter(val prefix: String) : FilenameFilter {
         override fun accept(dir: File, filename: String) = filename.startsWith(prefix)
     }
 }
