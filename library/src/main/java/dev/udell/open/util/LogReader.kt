@@ -168,7 +168,7 @@ class LogReader(context: Context) {
             } else {
                 // Not running on CrOS AFAICT; use a normal Android intent
                 action = Intent(Intent.ACTION_SEND)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT + Intent.FLAG_ACTIVITY_NEW_TASK)
                     .setType("application/txt")
                     .putExtra(Intent.EXTRA_SUBJECT, subject)
                     .putExtra(Intent.EXTRA_TEXT, body)
