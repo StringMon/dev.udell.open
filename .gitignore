@@ -12,6 +12,7 @@
 .externalNativeBuild
 .cxx
 
+/.idea/codestyles
 desktop.ini
 *.apk
 *.dbf
