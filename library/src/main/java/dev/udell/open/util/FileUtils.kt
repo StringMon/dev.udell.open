@@ -1,6 +1,9 @@
 package dev.udell.open.util
 
-import java.io.*
+import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
+import java.io.InputStream
 
 @Suppress("MemberVisibilityCanBePrivate", "unused")
 class FileUtils {
@@ -33,7 +36,7 @@ class FileUtils {
     /**
      * Prepare a directory for use as internal app storage. Creates the path it if necessary,
      * and marks it to be excluded from user-space media indices.
-     * 
+     *
      * @param path A `File` object specifying the directory to initialize. If `path` specifies a
      *             file (not just a directory), its parent directory is used.
      * @return Boolean Whether the directory was successfully created
@@ -62,8 +65,8 @@ class FileUtils {
     }
 
     /**
-     * Delete a file or directory from device storage. 
-     * 
+     * Delete a file or directory from device storage.
+     *
      * @param pathname The fully-qualified path and name of the file to delete
      * @return A `Boolean` indicating whether the file is now gone from storage: successfully
      *         deleted, or wasn't found in the first place.
@@ -71,6 +74,7 @@ class FileUtils {
     suspend fun deleteFile(pathname: CharSequence): Boolean {
         return deleteFile(File(pathname.toString()))
     }
+
     suspend fun deleteFile(condemned: File): Boolean {
         var result = true
         return if (condemned.exists()) {
@@ -89,18 +93,18 @@ class FileUtils {
 
     /**
      * Write the supplied data stream to a file in device storage.
-     * 
-     * @param path The directory in which to save the data. Will create this directory if needed. 
+     *
+     * @param path The directory in which to save the data. Will create this directory if needed.
      * @param name The name of the file within that directory to create with the data.
      * @param stream The data to save. Can be any sort of `InputStream` (text, raw bytes, etc).
      * @param listener An optional `ProgressListener` to be notified every 10 kB as the file is written.
      * @return The fully-qualified pathname of the file created, or `null` on failure.
      */
     suspend fun saveStream(
-        path: CharSequence,
-        name: CharSequence,
-        stream: InputStream,
-        listener: ProgressListener? = null
+            path: CharSequence,
+            name: CharSequence,
+            stream: InputStream,
+            listener: ProgressListener? = null
     ): String? {
         // Combine the given path + name in case the name has its own embedded path segment
         val pathName = File(path.toString() + File.separator + name)
@@ -110,7 +114,7 @@ class FileUtils {
                 // Can't create path
                 return null
             }
-        
+
             FileOutputStream(pathName).use { fos ->
                 var chunk: Int
                 var total = 0
@@ -135,36 +139,7 @@ class FileUtils {
             deleteFile(pathName)
             result = null
         }
-        
+
         return result
-    }
-
-    fun clearDir(path: String, filter: FilenameFilter): Boolean {
-        var found = false
-        val dir = File(path)
-        val list = dir.list(filter)
-        if (list != null) {
-            for (fileName in list) {
-                if (fileName.isNotEmpty()) {  // 0-length files aren't worth finding
-                    found = true
-                    continue
-                }
-                
-                File(path, fileName).delete()
-            }
-        }
-        return found
-    }
-}
-
-class PrefixFilter(prefix: CharSequence) : FilenameFilter {
-    private val targetPrefix: String = prefix.toString()
-    
-    override fun accept(dir: File, filename: String): Boolean {
-        return filename.startsWith(targetPrefix)
-    }
-
-    override fun toString(): String {
-        return "PrefixFilter.[$targetPrefix]"
     }
 }

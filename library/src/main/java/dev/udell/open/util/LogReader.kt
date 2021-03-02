@@ -16,6 +16,7 @@ import dev.udell.open.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FilenameFilter
 import java.io.IOException
 
 @Suppress("unused")
@@ -31,7 +32,7 @@ class LogReader(context: Context) {
         var useZip: Boolean = shouldZip
 
         // Grab the log from the system and save it to our working dir
-        val targetName = getLogFilePrefix(appContext) +
+        val targetName = LOG_SUBDIR + '/' + getLogFilePrefix(appContext) +
                 DateFormat.format("yyyyMMdd_hhmmss", System.currentTimeMillis()) + ".log"
         var savedName: String?
         withContext(Dispatchers.IO) {
@@ -111,10 +112,10 @@ class LogReader(context: Context) {
     }
 
     companion object {
-        private const val LOG_SUBDIR = "log"
+        internal const val LOG_SUBDIR = "log"
 
-        fun getLogFilePrefix(context: Context): String {
-            return LOG_SUBDIR + '/'.toString() + context.packageName + "_log_"
+        internal fun getLogFilePrefix(context: Context): String {
+            return context.packageName + "_log_"
         }
 
         @TargetApi(Build.VERSION_CODES.LOLLIPOP)
@@ -158,7 +159,7 @@ class LogReader(context: Context) {
                 // Not running on CrOS AFAICT; use a normal Android intent
                 action = Intent(Intent.ACTION_SEND)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT + Intent.FLAG_ACTIVITY_NEW_TASK)
-                    .setType("application/txt")
+                    .setType("text/plain")
                     .putExtra(Intent.EXTRA_SUBJECT, subject)
                     .putExtra(Intent.EXTRA_TEXT, body)
             }
@@ -171,19 +172,20 @@ class LogReader(context: Context) {
 class LogProvider : FileProvider()
 
 @Suppress("unused") // it's referenced in the manifest
-class LogDeleter : Initializer<LogReader> {
-    override fun create(context: Context): LogReader {
+class LogDeleter : Initializer<Unit> {
+    override fun create(context: Context) {
         // Remove any old log files from the cache dir
-        FileUtils().clearDir(
-            context.cacheDir.absolutePath,
-            PrefixFilter(LogReader.getLogFilePrefix(context))
-        )
-
-        return LogReader(context)
+        val path = context.cacheDir.absolutePath + '/' + LogReader.LOG_SUBDIR
+        File(path).list(PrefixFilter(LogReader.getLogFilePrefix(context)))
+                ?.forEach { name ->
+                    File(path, name).delete()
+                }
     }
 
-    override fun dependencies(): List<Class<out Initializer<*>>> {
-        // No dependencies on other libraries.
-        return emptyList()
+    // No dependencies on other libraries.
+    override fun dependencies(): List<Class<out Initializer<*>>> = emptyList()
+
+    class PrefixFilter(val prefix: String) : FilenameFilter {
+        override fun accept(dir: File, filename: String) = filename.startsWith(prefix)
     }
 }
