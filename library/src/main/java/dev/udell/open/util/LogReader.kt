@@ -15,9 +15,13 @@ import androidx.startup.Initializer
 import dev.udell.open.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FilenameFilter
 import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
 
 /**
  * Utility class to grab a copy of the current app's log(cat) and share it.
@@ -26,6 +30,29 @@ import java.io.IOException
 class LogReader(context: Context) {
     private val appContext = context.applicationContext
     private val fileOps = FileUtils()
+
+    private suspend fun getRawLog(): InputStream? {
+        var process: Process? = null
+        withContext(Dispatchers.Default) {
+            runCatching {
+                process = Runtime.getRuntime()
+                    .exec(arrayOf("logcat", "-v", "threadtime", "-d"))
+            }
+        }
+        return process?.inputStream
+    }
+
+    suspend fun getLog(): String? {
+        val log = getRawLog()
+        var baos: ByteArrayOutputStream? = null
+        withContext(Dispatchers.Default) {
+            runCatching {
+                baos = ByteArrayOutputStream(log?.available() ?: 0)
+                log?.copyTo(baos!!)
+            }
+        }
+        return baos?.toString()
+    }
 
     /**
      * The main log-sharing function. With no parameters, it'll share the current log as plain text
@@ -49,17 +76,8 @@ class LogReader(context: Context) {
         var savedName: String?
         withContext(Dispatchers.IO) {
             savedName = try {
-                var process: Process? = null
-                runCatching {
-                    process = Runtime.getRuntime()
-                        .exec(arrayOf("logcat", "-v", "threadtime", "-d"))
-                }
-                process?.let {
-                    fileOps.saveStream(
-                        appContext.cacheDir.absolutePath,
-                        targetName,
-                        it.inputStream
-                    )
+                getRawLog()?.let { log ->
+                    fileOps.saveStream(appContext.cacheDir.absolutePath, targetName, log)
                 }
             } catch (e: IOException) {
                 null
@@ -171,7 +189,6 @@ class LogReader(context: Context) {
                     Toast.makeText(context, R.string.loading_ellipses, Toast.LENGTH_SHORT)
                 progress.setGravity(Gravity.CENTER, 0, 0)
                 progress.show()
-
             } else {
                 // Not running on CrOS AFAICT; use a normal Android intent
                 action = Intent(Intent.ACTION_SEND)
