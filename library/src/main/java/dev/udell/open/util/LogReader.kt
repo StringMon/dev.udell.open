@@ -15,13 +15,7 @@ import androidx.startup.Initializer
 import dev.udell.open.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.ByteArrayInputStream
-import java.io.ByteArrayOutputStream
-import java.io.File
-import java.io.FilenameFilter
-import java.io.IOException
-import java.io.InputStream
-import java.io.OutputStream
+import java.io.*
 
 /**
  * Utility class to grab a copy of the current app's log(cat) and share it.
@@ -31,17 +25,9 @@ class LogReader(context: Context) {
     private val appContext = context.applicationContext
     private val fileOps = FileUtils()
 
-    private suspend fun getRawLog(): InputStream? {
-        var process: Process? = null
-        withContext(Dispatchers.Default) {
-            runCatching {
-                process = Runtime.getRuntime()
-                    .exec(arrayOf("logcat", "-v", "threadtime", "-d"))
-            }
-        }
-        return process?.inputStream
-    }
-
+    /**
+     * Return the current log as one (big) string.
+     */
     suspend fun getLog(): String? {
         val log = getRawLog()
         var baos: ByteArrayOutputStream? = null
@@ -55,8 +41,9 @@ class LogReader(context: Context) {
     }
 
     /**
-     * The main log-sharing function. With no parameters, it'll share the current log as plain text
-     * to any app on the system registered to receive such.
+     * Make the log available to the system's sharing providers. With no parameters, it'll share the
+     * current log as plain text to any app on the system registered to receive such. Supplying
+     * parameters will bias the share toward email.
      *
      * @param emailRecipient If supplied, configures the sharing intent for emailing to this address.
      * @param emailHeaders Optional text to prepend to the email.
@@ -139,6 +126,17 @@ class LogReader(context: Context) {
         }
 
         return true
+    }
+
+    private suspend fun getRawLog(): InputStream? {
+        var process: Process? = null
+        withContext(Dispatchers.Default) {
+            runCatching {
+                process = Runtime.getRuntime()
+                    .exec(arrayOf("logcat", "-v", "threadtime", "-d"))
+            }
+        }
+        return process?.inputStream
     }
 
     companion object {
