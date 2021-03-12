@@ -1,5 +1,31 @@
 package dev.udell.open.util
+/*
+    MIT License
+    
+    Copyright (c) 2021 Sterling C. Udell
+    
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+    
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+    
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+*/
 
+import android.util.Log
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -55,12 +81,14 @@ class FileUtils {
         // Ensure dir has a .nomedia file to tell the OS that the user doesn't need to see it 
         val nomedia = File(dir.absolutePath, ".nomedia")
         if (!nomedia.exists()) {
-            try {
-                nomedia.createNewFile()
-            } catch (e: IOException) {
-                // Ignore error; .nomedia isn't critical
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    nomedia.createNewFile()
+                    // Ignore any errors; .nomedia isn't critical
+                }
             }
         }
+
         return true
     }
 
@@ -71,25 +99,27 @@ class FileUtils {
      * @return A `Boolean` indicating whether the file is now gone from storage: successfully
      *         deleted, or wasn't found in the first place.
      */
-    suspend fun deleteFile(pathname: CharSequence): Boolean {
-        return deleteFile(File(pathname.toString()))
-    }
-
-    suspend fun deleteFile(condemned: File): Boolean {
-        var result = true
-        return if (condemned.exists()) {
-            if (condemned.isDirectory) {
-                // Recurse
-                val path = condemned.absolutePath + File.separator
-                condemned.list()?.forEach { child ->
-                    result = deleteFile(path + child) && result
-                }
-            }
-            condemned.delete() && result
-        } else {
-            true
+    suspend fun deleteFile(pathname: CharSequence): Boolean =
+        withContext(Dispatchers.IO) {
+            deleteFile(File(pathname.toString()))
         }
-    }
+
+    suspend fun deleteFile(condemned: File): Boolean =
+        withContext(Dispatchers.IO) {
+            if (condemned.exists()) {
+                var result = true
+                if (condemned.isDirectory) {
+                    // Recurse
+                    val path = condemned.absolutePath + File.separator
+                    condemned.list()?.forEach { child ->
+                        result = deleteFile(path + child) && result
+                    }
+                }
+                condemned.delete() && result
+            } else {
+                true
+            }
+        }
 
     /**
      * Write the supplied data stream to a file in device storage.
@@ -101,45 +131,50 @@ class FileUtils {
      * @return The fully-qualified pathname of the file created, or `null` on failure.
      */
     suspend fun saveStream(
-            path: CharSequence,
-            name: CharSequence,
-            stream: InputStream,
-            listener: ProgressListener? = null
+        path: CharSequence,
+        name: CharSequence,
+        stream: InputStream,
+        listener: ProgressListener? = null
     ): String? {
         // Combine the given path + name in case the name has its own embedded path segment
         val pathName = File(path.toString() + File.separator + name)
         var result: String? = pathName.toString()
-        try {
-            if (!initDirectory(pathName)) {
-                // Can't create path
-                return null
-            }
+        withContext(Dispatchers.IO) {
+            runCatching {
+                initDirectory(pathName)
 
-            FileOutputStream(pathName).use { fos ->
-                var chunk: Int
-                var total = 0
-                val buffer = ByteArray(10240)
-                do {
-                    chunk = stream.read(buffer)
-                    if (chunk > 0) {
-                        fos.write(buffer, 0, chunk)
-                        if (listener?.isCancelled == true) {
-                            throw IOException("Interrupted by listener")
-                        } else {
-                            total += chunk
-                            listener?.onProgress(total / 1024f)
+                FileOutputStream(pathName).use { fos ->
+                    var chunk: Int
+                    var total = 0
+                    val buffer = ByteArray(10240)
+                    do {
+                        chunk = stream.read(buffer)
+                        if (chunk > 0) {
+                            fos.write(buffer, 0, chunk)
+                            if (listener?.isCancelled == true) {
+                                throw IOException("Interrupted by listener")
+                            } else {
+                                total += chunk
+                                listener?.onProgress(total / 1024f)
+                            }
                         }
-                    }
-                } while (chunk != -1)
-                fos.flush()
-                fos.fd.sync()
+                    } while (chunk != -1)
+                    fos.flush()
+                    fos.fd.sync()
+                }
+            }.onFailure { exception ->
+                exception.message?.let { Log.e(TAG, it) }
+                // Interrupted, or failed to create file - make sure there's no incomplete remnant left behind
+                deleteFile(pathName)
+                result = null
             }
-        } catch (e: IOException) {
-            // Interrupted, or failed to create file - make sure there's no incomplete remnant left behind
-            deleteFile(pathName)
-            result = null
         }
 
         return result
+    }
+
+    companion object {
+        @Suppress("JAVA_CLASS_ON_COMPANION")
+        private val TAG = javaClass.enclosingClass.simpleName
     }
 }

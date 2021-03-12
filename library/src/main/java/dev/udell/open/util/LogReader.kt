@@ -1,4 +1,27 @@
 package dev.udell.open.util
+/*
+    MIT License
+    
+    Copyright (c) 2021 Sterling C. Udell
+    
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+    
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+    
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+*/
 
 import android.annotation.TargetApi
 import android.content.ActivityNotFoundException
@@ -27,6 +50,8 @@ class LogReader(context: Context) {
 
     /**
      * Return the current log as one (big) string.
+     *
+     * @return the log, or `null` on failure
      */
     suspend fun getLog(): String? {
         val log = getRawLog()
@@ -34,7 +59,11 @@ class LogReader(context: Context) {
         withContext(Dispatchers.Default) {
             runCatching {
                 baos = ByteArrayOutputStream(log?.available() ?: 0)
-                log?.copyTo(baos!!)
+                baos?.use { out ->
+                    log?.copyTo(out)
+                }
+            }.onFailure {
+                baos = null
             }
         }
         return baos?.toString()
@@ -62,34 +91,29 @@ class LogReader(context: Context) {
                 DateFormat.format("yyyyMMdd_hhmmss", System.currentTimeMillis()) + ".log"
         var savedName: String?
         withContext(Dispatchers.IO) {
-            savedName = try {
-                getRawLog()?.let { log ->
-                    fileOps.saveStream(appContext.cacheDir.absolutePath, targetName, log)
-                }
-            } catch (e: IOException) {
-                null
+            savedName = getRawLog()?.let { log ->
+                fileOps.saveStream(appContext.cacheDir.absolutePath, targetName, log)
             }
 
-            if (shouldZip) savedName?.let { unzipped ->
-                // Zip it up
-                val zipFileName = unzipped.replace(".log", ".zip")
-                try {
+            if (shouldZip) {
+                savedName?.let { unzippedName ->
+                    // Zip it up
+                    val zippedName = unzippedName.replace(".log", ".zip")
                     runCatching {
-                        Zipper.zip(zipFileName, unzipped)
+                        Zipper.zip(zippedName, unzippedName)
+                        fileOps.deleteFile(unzippedName)
+                    }.onSuccess {
+                        savedName = zippedName
+                    }.onFailure {
+                        // Fall back to sharing the unzipped file
+                        useZip = false
                     }
-                    fileOps.deleteFile(unzipped)
-                    savedName = zipFileName
-                } catch (e: IOException) {
-                    // Problem zipping up the backup. Fall back to sending the uncompressed log.
-                    useZip = false
                 }
             }
         }
 
-        if (savedName.isNullOrBlank()) {
-            // Log capture failed
-            return false
-        }
+        // Ensure that we have a log file to share
+        val finalName = savedName ?: return false
 
         // Prepare the sharing intent
 
@@ -108,16 +132,13 @@ class LogReader(context: Context) {
             emailIntent.putExtra(Intent.EXTRA_EMAIL, arrayOf(emailRecipient.toString()))
         }
 
-        emailIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            .putExtra(Intent.EXTRA_STREAM,
-                savedName?.let { name ->
-                    FileProvider.getUriForFile(
-                        appContext,
-                        appContext.packageName + ".logprovider",
-                        File(name)
-                    )
-                }
-            )
+        val logUri = FileProvider.getUriForFile(
+            appContext,
+            appContext.packageName + ".logprovider",
+            File(finalName)
+        )
+        emailIntent.putExtra(Intent.EXTRA_STREAM, logUri)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
 
         try {
             appContext.startActivity(emailIntent)
@@ -134,6 +155,8 @@ class LogReader(context: Context) {
             runCatching {
                 process = Runtime.getRuntime()
                     .exec(arrayOf("logcat", "-v", "threadtime", "-d"))
+            }.onFailure {
+                process = null
             }
         }
         return process?.inputStream
