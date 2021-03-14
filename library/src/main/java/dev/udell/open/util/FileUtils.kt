@@ -78,7 +78,7 @@ class FileUtils {
             return false
         }
 
-        // Ensure dir has a .nomedia file to tell the OS that the user doesn't need to see it 
+        // Ensure dir has a .nomedia file, which tells the OS that the user doesn't need to see it 
         val nomedia = File(dir.absolutePath, ".nomedia")
         if (!nomedia.exists()) {
             withContext(Dispatchers.IO) {
