@@ -130,6 +130,7 @@ class LogReader(context: Context) {
 
         if (emailRecipient != null) {
             emailIntent.putExtra(Intent.EXTRA_EMAIL, arrayOf(emailRecipient.toString()))
+                .setData(Uri.parse("mailto:"))
         }
 
         val logUri = FileProvider.getUriForFile(
