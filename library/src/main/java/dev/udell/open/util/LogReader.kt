@@ -128,11 +128,6 @@ class LogReader(context: Context) {
             emailIntent.type = "application/zip"
         }
 
-        if (emailRecipient != null) {
-            emailIntent.putExtra(Intent.EXTRA_EMAIL, arrayOf(emailRecipient.toString()))
-                .setData(Uri.parse("mailto:"))
-        }
-
         val logUri = FileProvider.getUriForFile(
             appContext,
             appContext.packageName + ".logprovider",
@@ -213,8 +208,16 @@ class LogReader(context: Context) {
                 progress.show()
             } else {
                 // Not running on CrOS AFAICT; use a normal Android intent
-                action = Intent(Intent.ACTION_SEND)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT + Intent.FLAG_ACTIVITY_NEW_TASK)
+
+                action = if (recipient == null) {
+                    Intent(Intent.ACTION_SEND)
+                } else {
+                    Intent(Intent.ACTION_SENDTO)
+                        .setData(Uri.parse("mailto:"))
+                        .putExtra(Intent.EXTRA_EMAIL, arrayOf(recipient.toString()))
+                }
+
+                action.addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT + Intent.FLAG_ACTIVITY_NEW_TASK)
                     .setType("text/plain")
                     .putExtra(Intent.EXTRA_SUBJECT, subject)
                     .putExtra(Intent.EXTRA_TEXT, body)
