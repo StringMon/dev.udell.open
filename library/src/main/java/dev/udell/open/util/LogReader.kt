@@ -84,8 +84,6 @@ class LogReader(context: Context) {
         emailHeaders: String? = null,
         shouldZip: Boolean = false
     ): Boolean {
-        var useZip: Boolean = shouldZip
-
         // Grab the log from the system and save it to our working dir
         val targetName = LOG_SUBDIR + '/' + getLogFilePrefix(appContext) +
                 DateFormat.format("yyyyMMdd_hhmmss", System.currentTimeMillis()) + ".log"
@@ -104,9 +102,6 @@ class LogReader(context: Context) {
                         fileOps.deleteFile(unzippedName)
                     }.onSuccess {
                         savedName = zippedName
-                    }.onFailure {
-                        // Fall back to sharing the unzipped file
-                        useZip = false
                     }
                 }
             }
@@ -123,10 +118,6 @@ class LogReader(context: Context) {
             appContext.getString(R.string.app_name) + " log",
             emailHeaders?.plus('\n')
         ) ?: return false
-
-        if (useZip) {
-            emailIntent.type = "application/zip"
-        }
 
         val logUri = FileProvider.getUriForFile(
             appContext,
@@ -174,27 +165,28 @@ class LogReader(context: Context) {
         fun makeEmailIntent(
             context: Context,
             recipient: CharSequence?,
-            subject: CharSequence,
-            body: CharSequence?
+            subject: String,
+            body: String?
         ): Intent? {
+            val mailTo = "mailto:$recipient" +
+                    "?subject=" + Uri.encode(subject) +
+                    "&body=" + Uri.encode(body ?: "")
+
             val action: Intent
             if (context.packageManager.hasSystemFeature("org.chromium.arc.device_management")) {
                 // Looks like we're running on Chrome OS, so we need a special email intent  
 
-                // CrOS has no generic sharing intent, so repipient is required here
+                // CrOS has no generic sharing intent, so recipient is required here
                 if (recipient == null) {
                     return null
                 }
 
                 // Build the intent
-                val mailTo = "mailto:" + recipient + "?subject=" + subject +
-                        "&body=" + body
                 action = Intent(Intent.ACTION_VIEW)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     .setData(
                         Uri.parse(
-                            "https://mail.google.com/mail/?extsrc=mailto&url=" +
-                                    Uri.encode(mailTo.replace("+", "%2B"))
+                            "https://mail.google.com/mail/?extsrc=mailto&url=" + Uri.encode(mailTo)
                         )
                     )
 
@@ -211,16 +203,14 @@ class LogReader(context: Context) {
 
                 action = if (recipient == null) {
                     Intent(Intent.ACTION_SEND)
+                        .putExtra(Intent.EXTRA_SUBJECT, subject)
+                        .putExtra(Intent.EXTRA_TEXT, body)
                 } else {
                     Intent(Intent.ACTION_SENDTO)
-                        .setData(Uri.parse("mailto:"))
-                        .putExtra(Intent.EXTRA_EMAIL, arrayOf(recipient.toString()))
+                        .setData(Uri.parse(mailTo))
                 }
 
                 action.addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT + Intent.FLAG_ACTIVITY_NEW_TASK)
-                    .setType("text/plain")
-                    .putExtra(Intent.EXTRA_SUBJECT, subject)
-                    .putExtra(Intent.EXTRA_TEXT, body)
             }
 
             return action
