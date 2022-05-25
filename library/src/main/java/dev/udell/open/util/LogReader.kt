@@ -160,6 +160,9 @@ class LogReader(context: Context) {
         /**
          * Helper function to create an email-the-developer `Intent`. Used to send the log, but
          * can also be used standalone, such as for a "Contact" link.
+         *
+         * If the `recipient` parameter is specified, the resulting `Intent` will be limited to
+         * email clients. Be aware that such an `Intent` does not support attachments!
          */
         @TargetApi(Build.VERSION_CODES.LOLLIPOP)
         fun makeEmailIntent(
@@ -205,6 +208,7 @@ class LogReader(context: Context) {
                     Intent(Intent.ACTION_SEND)
                         .putExtra(Intent.EXTRA_SUBJECT, subject)
                         .putExtra(Intent.EXTRA_TEXT, body)
+                        .setType("text/plain")
                 } else {
                     Intent(Intent.ACTION_SENDTO)
                         .setData(Uri.parse(mailTo))
