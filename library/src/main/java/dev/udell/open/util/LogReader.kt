@@ -84,8 +84,6 @@ class LogReader(context: Context) {
         emailHeaders: String? = null,
         shouldZip: Boolean = false
     ): Boolean {
-        var useZip: Boolean = shouldZip
-
         // Grab the log from the system and save it to our working dir
         val targetName = LOG_SUBDIR + '/' + getLogFilePrefix(appContext) +
                 DateFormat.format("yyyyMMdd_hhmmss", System.currentTimeMillis()) + ".log"
@@ -104,9 +102,6 @@ class LogReader(context: Context) {
                         fileOps.deleteFile(unzippedName)
                     }.onSuccess {
                         savedName = zippedName
-                    }.onFailure {
-                        // Fall back to sharing the unzipped file
-                        useZip = false
                     }
                 }
             }
@@ -123,14 +118,6 @@ class LogReader(context: Context) {
             appContext.getString(R.string.app_name) + " log",
             emailHeaders?.plus('\n')
         ) ?: return false
-
-        if (useZip) {
-            emailIntent.type = "application/zip"
-        }
-
-        if (emailRecipient != null) {
-            emailIntent.putExtra(Intent.EXTRA_EMAIL, arrayOf(emailRecipient.toString()))
-        }
 
         val logUri = FileProvider.getUriForFile(
             appContext,
@@ -173,32 +160,36 @@ class LogReader(context: Context) {
         /**
          * Helper function to create an email-the-developer `Intent`. Used to send the log, but
          * can also be used standalone, such as for a "Contact" link.
+         *
+         * If the `recipient` parameter is specified, the resulting `Intent` will be limited to
+         * email clients. Be aware that such an `Intent` does not support attachments!
          */
         @TargetApi(Build.VERSION_CODES.LOLLIPOP)
         fun makeEmailIntent(
             context: Context,
             recipient: CharSequence?,
-            subject: CharSequence,
-            body: CharSequence?
+            subject: String,
+            body: String?
         ): Intent? {
+            val mailTo = "mailto:$recipient" +
+                    "?subject=" + Uri.encode(subject) +
+                    "&body=" + Uri.encode(body ?: "")
+
             val action: Intent
             if (context.packageManager.hasSystemFeature("org.chromium.arc.device_management")) {
                 // Looks like we're running on Chrome OS, so we need a special email intent  
 
-                // CrOS has no generic sharing intent, so repipient is required here
+                // CrOS has no generic sharing intent, so recipient is required here
                 if (recipient == null) {
                     return null
                 }
 
                 // Build the intent
-                val mailTo = "mailto:" + recipient + "?subject=" + subject +
-                        "&body=" + body
                 action = Intent(Intent.ACTION_VIEW)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     .setData(
                         Uri.parse(
-                            "https://mail.google.com/mail/?extsrc=mailto&url=" +
-                                    Uri.encode(mailTo.replace("+", "%2B"))
+                            "https://mail.google.com/mail/?extsrc=mailto&url=" + Uri.encode(mailTo)
                         )
                     )
 
@@ -212,11 +203,18 @@ class LogReader(context: Context) {
                 progress.show()
             } else {
                 // Not running on CrOS AFAICT; use a normal Android intent
-                action = Intent(Intent.ACTION_SEND)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT + Intent.FLAG_ACTIVITY_NEW_TASK)
-                    .setType("text/plain")
-                    .putExtra(Intent.EXTRA_SUBJECT, subject)
-                    .putExtra(Intent.EXTRA_TEXT, body)
+
+                action = if (recipient == null) {
+                    Intent(Intent.ACTION_SEND)
+                        .putExtra(Intent.EXTRA_SUBJECT, subject)
+                        .putExtra(Intent.EXTRA_TEXT, body)
+                        .setType("text/plain")
+                } else {
+                    Intent(Intent.ACTION_SENDTO)
+                        .setData(Uri.parse(mailTo))
+                }
+
+                action.addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT + Intent.FLAG_ACTIVITY_NEW_TASK)
             }
 
             return action
